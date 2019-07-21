@@ -1,4 +1,244 @@
 
+v1.3.0-pro / 2019-05-30
+=======================
+
+  * add wrapping of env var logs with `logs.disable` check
+  
+v1.3.0 / 2019-05-30
+===================
+
+  * add ./vendor to excluded directories by default
+  * refactor: regenerate parser with updated peg
+  * remove discount message, it didn't work
+
+v1.2.0 / 2019-04-20
+===================
+
+  * add 60% coupon
+
+v1.2.0-pro / 2019-04-05
+=======================
+
+  * add regional DNS with latency-based routing
+  * add `--region` flag for every command to override region id
+
+v1.1.3-pro / 2019-04-02
+=======================
+
+  * Rebase
+
+v1.1.3 / 2019-04-02
+===================
+
+  * update tj/aws dependency for duplicate logs fix
+
+v1.1.2-pro / 2019-03-29
+=======================
+
+  * Rebase
+
+v1.1.2 / 2019-03-29
+===================
+
+  * fix: update tj/aws dependency for ThrottlingException logs exception
+
+v1.1.1-pro / 2019-03-23
+=======================
+
+  * update warming function to nodejs8.10 to prevent EOL warning from AWS
+
+v1.1.0-pro / 2019-03-04
+===================
+
+  * add file based environment variables, removing the size restrictions
+
+v1.0.0-pro / 2019-02-26
+===================
+
+  * add regional endpoint support
+
+v0.9.1-pro / 2019-01-21
+=======================
+
+  * add sorting of env vars. Closes #750
+
+v0.9.0-pro / 2018-12-13
+=======================
+
+  * add Lambda layer support. Closes #743
+
+v0.8.1-pro / 2018-12-11
+=======================
+
+  * improve `up env export` performance, no longer linear time
+  * fix `up deploys` error when the stage is not deployed. Closes #716
+  * Rebase
+
+v0.8.1 / 2018-12-11
+===================
+
+  * update tj/aws for bug preventing all logs from being returned. Closes #733
+  * add deploy --no-build flag for skipping build hooks. Closes #730
+  * Release v0.8.0-pro
+
+v0.8.0-pro / 2018-12-06
+=======================
+
+  * improve `up env export` performance, no longer linear time
+  * fix `up deploys` error when the stage is not deployed. Closes #716
+
+v0.8.0 / 2018-12-04
+===================
+
+  * add endpoint URL to the deployment output
+  * add deploy stage to the deployment output
+  * add msg about Up Pro
+  * remove "not info" log example. Closes #724
+  * fix typo in deploy example. Closes #718
+  * fix: use crystallang/crystal for Crystal builds (#713)
+
+v0.7.8-pro / 2018-09-24
+=======================
+
+  * add `up env export` command for exposing env vars to shell scripts
+
+v0.7.7-pro / 2018-09-17
+=======================
+
+  * Rebase
+
+v0.7.7 / 2018-09-17
+===================
+
+  * update go-update dependency for copy regression
+
+v0.7.5-pro / 2018-09-17
+=======================
+
+  * Rebase
+
+v0.7.5 / 2018-09-17
+===================
+
+  * update go-update dependency for rename() to copy replacement
+
+v0.7.4-pro / 2018-09-16
+=======================
+
+  * add baked in env vars from SSM, env vars are no longer loaded at runtime. Closes #547
+
+v0.7.4 / 2018-09-16
+===================
+
+  * add request id to proxy errors
+  * fix missing lambda configurations costs. (#703)
+  * fix order relay errors so timeouts are returned first (leads to better error messages)
+
+v0.7.3-pro / 2018-08-08
+=======================
+
+  * Rebase
+
+v0.7.3 / 2018-08-08
+===================
+
+  * fix crash recovery in lambda, bug was introduced in v0.7.0
+  * update cors middleware for security when using allow-origin * and allow-credentials
+
+v0.7.2-pro / 2018-07-23
+=======================
+
+  * Rebase
+
+v0.7.2 / 2018-07-23
+===================
+
+  * add vpc stage override support. Closes #689
+
+v0.7.1-pro / 2018-07-12
+=======================
+
+  * Rebase
+
+v0.7.1 / 2018-07-12
+===================
+
+  * fix initial IAM role creation waiting due to error response change
+
+v0.7.0-pro / 2018-07-11
+=======================
+
+  * Rebase
+
+v0.7.0 / 2018-07-11
+===================
+
+  * add in-flight request timeouts.
+  * remove retries
+  * refactor crash recovery to be more robust
+
+v0.6.8-pro / 2018-06-07
+=======================
+
+  * Rebase
+
+v0.6.8 / 2018-06-07
+===================
+
+  * fix multiple set-cookie API Gateway limitation for real (previous had a bug)
+
+v0.6.7-pro / 2018-06-07
+=======================
+
+  * fix s3 acceleration update with existing S3 buckets
+  * Rebase
+
+v0.6.7 / 2018-06-07
+===================
+
+  * add striping of @owner/repo@ portion of Lerna tags. Closes #670
+  * fix multiple set-cookies API Gateway limitation with casing hack
+  * fix deployment with empty Git repo
+  * update AWS SDK versions for assuming roles. (#668)
+
+v0.6.6-pro / 2018-05-24
+=======================
+
+  * Rebase
+
+v0.6.6 / 2018-05-24
+===================
+
+  * add vpc support. Closes #281
+  * fix Crystal build on Linux: PWD => pwd (#664)
+
+v0.6.5-pro / 2018-05-16
+=======================
+
+  * Rebase
+
+v0.6.5 / 2018-05-16
+===================
+
+  * add hidden disable stats command (#659)
+  * add X-Context header field. Closes #657
+  * fix CORS header fields from being clobbered by error pages. Closes #661
+
+v0.6.4-pro / 2018-05-09
+=======================
+
+  * add deployment size to `up deploys` output
+  * add asterisk to denote current version in `up deploys` due to rollbacks
+  * Rebase
+
+v0.6.4 / 2018-05-09
+===================
+
+  * add support for customizing the Lambda function IAM role policy. Closes #539
+  * add support for specifying dns zone, and disabling it. Closes #536
+  * add support for updating the role policy upon deploy
+  * change default prune retention to 30 versions
+
 v0.6.3-pro / 2018-05-02
 =======================
 

@@ -3,6 +3,7 @@ package lambda
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,11 +24,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/dchest/uniuri"
-	"github.com/dustin/go-humanize"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/golang/sync/errgroup"
 	"github.com/pkg/errors"
 
 	"github.com/apex/up"
+	"github.com/apex/up/config"
 	"github.com/apex/up/internal/proxy/bin"
 	"github.com/apex/up/internal/shim"
 	"github.com/apex/up/internal/util"
@@ -66,26 +68,6 @@ var apiGatewayAssumePolicy = `{
       },
       "Action": "sts:AssumeRole"
     }
-	]
-}`
-
-// policy for the lambda function.
-var functionPolicy = `{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Resource": "*",
-			"Action": [
-				"logs:CreateLogGroup",
-				"logs:CreateLogStream",
-				"logs:PutLogEvents",
-				"ssm:GetParametersByPath",
-				"ec2:CreateNetworkInterface",
-				"ec2:DescribeNetworkInterfaces",
-				"ec2:DeleteNetworkInterface"
-			]
-		}
 	]
 }`
 
@@ -179,7 +161,7 @@ func (p *Platform) Deploy(d up.Deploy) error {
 		g.Go(func() error {
 			version, err := p.deploy(region, d)
 			if err == nil {
-				return nil
+				goto endpoint
 			}
 
 			if err != errFirstDeploy {
@@ -189,6 +171,16 @@ func (p *Platform) Deploy(d up.Deploy) error {
 			if err := p.CreateStack(region, version); err != nil {
 				return errors.Wrap(err, region)
 			}
+
+		endpoint:
+			url, err := p.URL(region, d.Stage)
+			if err != nil {
+				return errors.Wrap(err, "fetching url")
+			}
+
+			p.events.Emit("platform.deploy.url", event.Fields{
+				"url": url,
+			})
 
 			return nil
 		})
@@ -543,14 +535,15 @@ func (p *Platform) createFunction(c *lambda.Lambda, a *apigateway.APIGateway, up
 	}
 
 	// upload to s3
-	log.Debug("uploading function")
 	b := aws.String(p.getS3BucketName(region))
 	k := aws.String(p.getS3Key(d.Stage))
 
+	log.Debugf("uploading function to bucket %s key %s", *b, *k)
 	_, err = up.Upload(&s3manager.UploadInput{
-		Bucket: b,
-		Key:    k,
-		Body:   bytes.NewReader(p.zip.Bytes()),
+		Bucket:               b,
+		Key:                  k,
+		Body:                 bytes.NewReader(p.zip.Bytes()),
+		ServerSideEncryption: aws.String("aws:kms"),
 	})
 
 	if err != nil {
@@ -579,6 +572,7 @@ retry:
 			S3Bucket: b,
 			S3Key:    k,
 		},
+		VpcConfig: p.vpc(),
 	})
 
 	// IAM is eventually consistent apparently, so we have to keep retrying
@@ -601,11 +595,12 @@ func (p *Platform) updateFunction(c *lambda.Lambda, a *apigateway.APIGateway, up
 	k := aws.String(p.getS3Key(d.Stage))
 
 	// upload
-	log.Debug("uploading function")
+	log.Debugf("uploading function to bucket %s key %s", *b, *k)
 	_, err = up.Upload(&s3manager.UploadInput{
-		Bucket: b,
-		Key:    k,
-		Body:   bytes.NewReader(p.zip.Bytes()),
+		Bucket:               b,
+		Key:                  k,
+		Body:                 bytes.NewReader(p.zip.Bytes()),
+		ServerSideEncryption: aws.String("aws:kms"),
 	})
 
 	// ensure bucket exists
@@ -636,6 +631,7 @@ func (p *Platform) updateFunction(c *lambda.Lambda, a *apigateway.APIGateway, up
 		MemorySize:   aws.Int64(int64(p.config.Lambda.Memory)),
 		Timeout:      aws.Int64(int64(p.config.Proxy.Timeout + 3)),
 		Environment:  env,
+		VpcConfig:    p.vpc(),
 	})
 
 	if err != nil {
@@ -668,6 +664,19 @@ func (p *Platform) updateFunction(c *lambda.Lambda, a *apigateway.APIGateway, up
 	}
 
 	return *res.Version, nil
+}
+
+// vpc returns the vpc configuration or nil.
+func (p *Platform) vpc() *lambda.VpcConfig {
+	v := p.config.Lambda.VPC
+	if v == nil {
+		return nil
+	}
+
+	return &lambda.VpcConfig{
+		SubnetIds:        aws.StringSlice(v.Subnets),
+		SecurityGroupIds: aws.StringSlice(v.SecurityGroups),
+	}
 }
 
 // alias creates or updates an alias.
@@ -775,11 +784,16 @@ func (p *Platform) createRole() error {
 func (p *Platform) updateRole(c *iam.IAM) error {
 	name := p.roleName()
 
+	policy, err := p.functionPolicy()
+	if err != nil {
+		return errors.Wrap(err, "creating function policy")
+	}
+
 	log.Debug("updating role policy")
-	_, err := c.PutRolePolicy(&iam.PutRolePolicyInput{
+	_, err = c.PutRolePolicy(&iam.PutRolePolicyInput{
 		PolicyName:     &name,
 		RoleName:       &name,
-		PolicyDocument: &functionPolicy,
+		PolicyDocument: &policy,
 	})
 
 	return err
@@ -929,6 +943,24 @@ func (p *Platform) getS3BucketName(region string) string {
 // which is currently always present, implicitly or explicitly.
 func (p *Platform) getAccountID() string {
 	return strings.Split(p.config.Lambda.Role, ":")[4]
+}
+
+// functionPolicy returns the IAM function role policy.
+func (p *Platform) functionPolicy() (string, error) {
+	policy := struct {
+		Version   string
+		Statement []config.IAMPolicyStatement
+	}{
+		Version:   "2012-10-17",
+		Statement: p.config.Lambda.Policy,
+	}
+
+	b, err := json.MarshalIndent(policy, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
 }
 
 // isCreatingRole returns true if the role has not been created.

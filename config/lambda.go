@@ -1,6 +1,32 @@
 package config
 
-import "errors"
+import (
+	"errors"
+)
+
+// defaultPolicy is the default function role policy.
+var defaultPolicy = IAMPolicyStatement{
+	"Effect":   "Allow",
+	"Resource": "*",
+	"Action": []string{
+		"logs:CreateLogGroup",
+		"logs:CreateLogStream",
+		"logs:PutLogEvents",
+		"ssm:GetParametersByPath",
+		"ec2:CreateNetworkInterface",
+		"ec2:DescribeNetworkInterfaces",
+		"ec2:DeleteNetworkInterface",
+	},
+}
+
+// IAMPolicyStatement configuration.
+type IAMPolicyStatement map[string]interface{}
+
+// VPC configuration.
+type VPC struct {
+	Subnets        []string `json:"subnets"`
+	SecurityGroups []string `json:"security_groups"`
+}
 
 // Lambda configuration.
 type Lambda struct {
@@ -15,6 +41,12 @@ type Lambda struct {
 
 	// Runtime of the function.
 	Runtime string `json:"runtime"`
+
+	// Policy of the function role.
+	Policy []IAMPolicyStatement `json:"policy"`
+
+	// VPC configuration.
+	VPC *VPC `json:"vpc"`
 }
 
 // Default implementation.
@@ -26,6 +58,8 @@ func (l *Lambda) Default() error {
 	if l.Runtime == "" {
 		l.Runtime = "nodejs8.10"
 	}
+
+	l.Policy = append(l.Policy, defaultPolicy)
 
 	return nil
 }
@@ -51,5 +85,9 @@ func (l *Lambda) Override(c *Config) {
 
 	if l.Role != "" {
 		c.Lambda.Role = l.Role
+	}
+
+	if l.VPC != nil {
+		c.Lambda.VPC = l.VPC
 	}
 }

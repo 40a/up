@@ -28,20 +28,16 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// Fields retained when clearing.
-var keepFields = map[string]bool{
-	"X-Powered-By": true,
-}
-
-// ClearHeader removes all header fields.
+// ClearHeader removes all content header fields.
 func ClearHeader(h http.Header) {
-	for k := range h {
-		if keepFields[k] {
-			continue
-		}
-
-		h.Del(k)
-	}
+	h.Del("Content-Type")
+	h.Del("Content-Length")
+	h.Del("Content-Encoding")
+	h.Del("Content-Range")
+	h.Del("Content-MD5")
+	h.Del("Cache-Control")
+	h.Del("ETag")
+	h.Del("Last-Modified")
 }
 
 // ManagedByUp appends "Managed by Up".
@@ -132,6 +128,8 @@ func IsNotFound(err error) bool {
 	case err == nil:
 		return false
 	case strings.Contains(err.Error(), "ResourceNotFoundException"):
+		return true
+	case strings.Contains(err.Error(), "NoSuchEntity"):
 		return true
 	case strings.Contains(err.Error(), "does not exist"):
 		return true
@@ -482,4 +480,56 @@ func DateSuffix(t time.Time) string {
 	default:
 		return "th"
 	}
+}
+
+// StripLerna strips the owner portion of a Lerna-based tag. See #670 for
+// details. They are in the form of "@owner/repo@0.5.0".
+func StripLerna(s string) string {
+	if strings.HasPrefix(s, "@") {
+		p := strings.Split(s, "@")
+		return p[len(p)-1]
+	}
+
+	return s
+}
+
+// FixMultipleSetCookie staggers the casing of each set-cookie
+// value to trick API Gateway into setting multiple in the response.
+func FixMultipleSetCookie(h http.Header) {
+	cookies := h["Set-Cookie"]
+
+	if len(cookies) == 0 {
+		return
+	}
+
+	h.Del("Set-Cookie")
+
+	for i, v := range cookies {
+		h[BinaryCase("set-cookie", i)] = []string{v}
+	}
+}
+
+// BinaryCase ported from https://github.com/Gi60s/binary-case/blob/master/index.js#L86.
+func BinaryCase(s string, n int) string {
+	var res []rune
+
+	for _, c := range s {
+		if c >= 65 && c <= 90 {
+			if n&1 > 0 {
+				c += 32
+			}
+			res = append(res, c)
+			n >>= 1
+		} else if c >= 97 && c <= 122 {
+			if n&1 > 0 {
+				c -= 32
+			}
+			res = append(res, c)
+			n >>= 1
+		} else {
+			res = append(res, c)
+		}
+	}
+
+	return string(res)
 }

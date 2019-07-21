@@ -26,47 +26,15 @@ The `profile` property is equivalent to setting `AWS_PROFILE` for referencing AW
 
 ## Regions
 
-You may specify one or more target regions for deployment using the `regions` array. Glob style patterns may be used to match region ids. By default "us-west-2" is used unless the `AWS_REGION` environment variable is defined.
+You may specify a target region for deployments using the `regions` array. By default "us-west-2" is used unless the `AWS_REGION` environment variable is defined.
 
-Note: Currently only a single region is supported until the issue https://github.com/apex/up/issues/134 is closed.
+Note: Currently only a single region is supported, however you can deploy to many regions one at a time for global deploys, see https://medium.com/@tjholowaychuk/global-serverless-apps-with-aws-lambda-api-gateway-4642ef1f221d for details.
 
 A single region:
 
 ```json
 {
   "regions": ["us-west-2"]
-}
-```
-
-Several regions:
-
-```json
-{
-  "regions": ["us-west-2", "us-east-1", "ca-central-1"]
-}
-```
-
-USA and Canada only:
-
-```json
-{
-  "regions": ["us-*", "ca-*"]
-}
-```
-
-Western USA only:
-
-```json
-{
-  "regions": ["us-west-*"]
-}
-```
-
-All regions like a boss:
-
-```json
-{
-  "regions": ["*"]
 }
 ```
 
@@ -86,6 +54,7 @@ Currently Lambda supports the following regions:
 - **eu-west-1** – EU (Ireland)
 - **eu-west-2** – EU (London)
 - **eu-west-3** – EU (Paris)
+- **eu-north-1** – EU (Stockholm)
 - **sa-east-1** – South America (São Paulo)
 
 ## Lambda Settings
@@ -93,8 +62,9 @@ Currently Lambda supports the following regions:
 The following Lambda-specific settings are available:
 
 - `role` – IAM role ARN, defaulting to the one Up creates for you
-- `memory` – Function memory in mb (Default `512`, Min `128`, Max `1536`)
-- `runtime` – Function runtime (Default `nodejs8.10`)
+- `memory` – Function memory in mb (Default `512`, Min `128`, Max `3008`)
+- `policy` – IAM function policy statement(s)
+- `vpc` - VPC subnets and security groups
 
 For example:
 
@@ -103,16 +73,54 @@ For example:
   "name": "api",
   "lambda": {
     "memory": 512,
-    "runtime": "nodejs6.10"
+    "vpc": {
+      "subnets": [
+        "subnet-aaaaaaa",
+        "subnet-bbbbbbb",
+        "subnet-ccccccc",
+      ],
+      "security_groups": [
+        "sg-xxxxxxx"
+      ]
+    }
   }
 }
 ```
 
-Lambda timeout is implied from the [Reverse Proxy](#configuration.reverse_proxy) `timeout` setting.
+The Lambda `memory` setting also scales the CPU, if your app is slow, or for cases such as larger Node applications with many `require()`s you may need to increase this value. View the [Lambda Pricing](https://aws.amazon.com/lambda/pricing/) page for more information regarding the `memory` setting.
 
-Lambda `memory` also scales the CPU, if your app is slow, or for cases such as larger Node applications with many `require()`s you may need to increase this value. View the [Lambda Pricing](https://aws.amazon.com/lambda/pricing/) page for more information regarding the `memory` setting.
+Using Up Pro in a VPC requires access to the that the AWS SSM Parameter Store API for environment variables, otherwise the app may appear to "hang" and timeout when loading secrets. Removing VPC configuration must currently be done in the AWS console.
 
 Note: Changes to Lambda configuration do not require a `up stack apply`, just deploy and these changes are picked up!
+
+### IAM Policy
+
+Up uses IAM policies to grant access to resources within your AWS account such as DynamoDB or S3.
+
+To add additional permissions add one or more IAM policy statements to the `policy` array, in the following example we permit DynamoDB item reading, updating, and deleting.
+
+```json
+{
+  "name": "myapp",
+  "lambda": {
+    "memory": 1024,
+    "policy": [
+      {
+        "Effect": "Allow",
+        "Resource": "*",
+        "Action": [
+          "dynamodb:Get*",
+          "dynamodb:List*",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ]
+      }
+    ]
+  }
+}
+```
+
+Deploy to update the IAM function role permissions.
 
 ## Hook Scripts
 
@@ -139,7 +147,7 @@ Here's an example using Browserify to bundle a Node application. Use the `-v` ve
 
 Up performs runtime inference to discover what kind of application you're using, and does its best to provide helpful defaults – see the [Runtimes](#runtimes) section.
 
-Multiple commands be provided by using arrays, and are run in separate shells:
+Multiple commands are provided by using arrays, and are run in separate shells:
 
 ```json
 {
@@ -185,6 +193,8 @@ Note that `static.dir` only tells Up which directory to serve – it does not ex
 *
 !public/**
 ```
+
+Note: Files are currently served from AWS Lambda as well, so there is a 6MB restriction on the file size.
 
 ### Dynamic Apps
 
@@ -465,7 +475,7 @@ Suppose you have `https://api.myapp.com`, you may want to customize `cors` to pe
   "cors": {
     "allowed_origins": ["https://myapp.com"],
     "allowed_methods": ["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"],
-    "allowed_headers": ["Content-Type", "Authorization"],
+    "allowed_headers": ["*"],
     "allow_credentials": true
   }
 }
@@ -473,11 +483,29 @@ Suppose you have `https://api.myapp.com`, you may want to customize `cors` to pe
 
 - `allowed_origins` – A list of origins a cross-domain request can be executed from. Use `*` to allow any origin, or a wildcard such as `http://*.domain.com` (Default: `["*"]`)
 - `allowed_methods` – A list of methods the client is allowed to use with cross-domain requests. (Default: `["HEAD", "GET", "POST"]`)
-- `allowed_headers` – A list of headers the client is allowed to use with cross-domain requests. If the special `*` value is present in the list, all headers will be allowed. (Default: `[]`)
+- `allowed_headers` – A list of headers the client is allowed to use with cross-domain requests. If the special `*` value is present in the list, all headers will be allowed. (Default: `["Origin", "Accept", "Content-Type", "X-Requested-With"]`)
 - `exposed_headers` – A list of headers which are safe to expose to the API of a CORS response.
 - `max_age` – A number indicating how long (in seconds) the results of a preflight request can be cached.
 - `allow_credentials` – A boolean indicating whether the request can include user credentials such as cookies, HTTP authentication or client side SSL certificates. (Default: `true`)
 - `debug` - A boolean which will output debug logs (Default: `false`)
+
+Here's an example performing a GraphQL query with `fetch()`, note that `Accept` is set to accept only JSON:
+
+```js
+const body = JSON.stringify({
+  query: `query {
+    pet(id: 2) {
+      name
+    }
+  }`
+})
+
+const res = await fetch('https://myapp.com', {
+  headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+  method: 'POST',
+  body
+})
+```
 
 Note: You do not need to run `up stack plan` for CORS settings, simply redeploy the stage.
 
@@ -491,19 +519,15 @@ The following settings are available:
   - When `package.json` is detected `npm start` is used
   - When `app.js` is detected `node app.js` is used
   - When `app.py` is detected `python app.py` is used
-- `backoff` – Backoff configuration object described in "Crash Recovery"
-- `retry` – Retry idempotent requests upon server crashes. (Default `true`)
 - `timeout` – Timeout in seconds per request (Default `15`, Max `25`)
 - `listen_timeout` – Timeout in seconds Up will wait for your app to boot and listen on `PORT` (Default `15`, Max `25`)
-- `shutdown_timeout` – Timeout in seconds Up will wait after sending a SIGINT to your server, before sending a SIGKILL (Default `15`)
 
 ```json
 {
   "proxy": {
     "command": "node app.js",
     "timeout": 10,
-    "listen_timeout": 5,
-    "shutdown_timeout": 5
+    "listen_timeout": 5
   }
 }
 ```
@@ -512,36 +536,7 @@ Lambda's function timeout is implied from the `.proxy.timeout` setting.
 
 ### Crash Recovery
 
-Another benefit of using Up as a reverse proxy is performing crash recovery. Up will retry idempotent requests upon failure, and upon crash it will restart your server and re-attempt before responding to the client.
-
-By default the back-off is configured as:
-
-- `min` – Minimum time before retrying (Default `100ms`)
-- `max` – Maximum time before retrying (Default `500ms`)
-- `factor` – Factor applied to each attempt (Default `2`)
-- `attempts` – Attempts made before failing (Default `3`)
-- `jitter` – Apply jitter (Default `false`)
-
-By default a total of 3 consecutive attempts will be made before responding with an error, in the default case this will be a total of 700ms for the three attempts.
-
-Here's an example tweaking the default behaviour:
-
-```json
-{
-  "proxy": {
-    "command": "node app.js",
-    "backoff": {
-      "min": 500,
-      "max": 1500,
-      "factor": 1.5,
-      "attempts": 5,
-      "jitter": true
-    }
-  }
-}
-```
-
-Since Up's purpose is to proxy your http traffic, Up will treat network errors as a crash.  When Up detects this, it will allow the server to cleanly close by sending a SIGINT, it the server does not close within `proxy.shutdown_timeout` seconds, it will forcibly close it with a SIGKILL.
+Another benefit of using Up as a reverse proxy is performing crash recovery. Up will attempt to restart your application if the process crashes to continue serving subsequent requests.
 
 ## DNS Zones & Records
 
@@ -675,10 +670,39 @@ You may also provide an optional base path, for example to prefix your API with 
 }
 ```
 
-
 Plan the changes via `up stack plan` and `up stack apply` to perform the changes. You may [purchase domains](#guides.development_to_production_workflow.purchasing_a_domain) from the command-line, or map custom domains from other registrars. Up uses Route53 to purchase domains using your AWS account credit card. See `up help domains`.
 
 Note: CloudFront can take up to ~40 minutes to distribute this configuration the first time, so grab a coffee while these changes are applied. Also note that ACM certificates are always created in the Virginia (us-east-1) region due to how API Gateway interoperates with CloudFront.
+
+### DNS Zones
+
+By default when you specify a stage `domain` — such as "api.example.com" — a DNS zone is created in Route53 for the top level domain "example.com", and an ALIAS record "api.example.com" is added to this zone.
+
+If you're using external DNS and wish to omit the zone entirely you can disable it with the `zone` property:
+
+```json
+{
+  "stages": {
+    "production": {
+      "domain": "gh-polls.com",
+      "zone": false
+    }
+  }
+}
+```
+
+You may also explicitly specify the zone by providing a string. In the following example an "api.gh-polls.com" zone will be created, instead of putting the record in "gh-polls.com".
+
+```json
+{
+  "stages": {
+    "production": {
+      "domain": "api.gh-polls.com",
+      "zone": "api.gh-polls.com"
+    }
+  }
+}
+```
 
 ## Stage Overrides
 
@@ -738,6 +762,16 @@ By default Up treats stdout as `info` level logs, and stderr as `error` level. I
   "logs": {
     "stdout": "info",
     "stderr": "info"
+  }
+}
+```
+
+You can disable Up's logs entirely by using the "disable" option:
+
+```json
+{
+  "logs": {
+    "disable": true
   }
 }
 ```

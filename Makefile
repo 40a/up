@@ -13,14 +13,6 @@ install:
 	@$(GO) install ./...
 .PHONY: install
 
-# Install the development dependencies.
-install.deps:
-	@echo "==> Installing dev dependencies"
-	@$(GO) get -u rsc.io/gt
-	@$(GO) get -u github.com/jteeuwen/go-bindata/...
-	@$(GO) get -u github.com/pointlander/peg
-.PHONY: install.deps
-
 # Run all tests.
 test: internal/proxy/bin/bin_assets.go
 	@$(GO) test -timeout 2m ./... && echo "\n==>\033[32m Ok\033[m\n"
@@ -42,7 +34,7 @@ cloc:
 # Release binaries to GitHub.
 release: build
 	@echo "==> Releasing"
-	@goreleaser -p 1 --rm-dist -config .goreleaser.yml
+	@goreleaser -p 1 --rm-dist --config .goreleaser.yml
 	@echo "==> Complete"
 .PHONY: release
 
